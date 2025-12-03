@@ -9,3 +9,5 @@ tokio-util = "0.7.17"
 uuid = { version = "1", features = ["v4"] }
 tracing = "0.1"
 tracing-subscriber = "0.3"
+random_name_generator = "0.3.6"
+colored = "2.1"
