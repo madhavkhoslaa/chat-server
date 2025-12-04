@@ -1,11 +1,11 @@
-use tokio::net::TcpStream;
-use tokio::io::{AsyncWriteExt, AsyncBufReadExt, BufReader, split};
-use tracing::{error, info};
-use uuid::Uuid;
+use crate::inMemoryDB::{Activity, InMemoryDB, User};
+use crate::message::{format_activity, format_user_list};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
-use crate::inMemoryDB::{InMemoryDB, User, Activity};
-use crate::message::{format_activity, format_user_list};
+use tokio::io::{split, AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::net::TcpStream;
+use tracing::{error, info};
+use uuid::Uuid;
 
 pub async fn handle_client(
     stream: TcpStream,
@@ -17,27 +17,34 @@ pub async fn handle_client(
     let (reader, mut writer) = split(stream);
     let mut reader = BufReader::new(reader);
     let mut line = String::new();
-    
+
     // Send list of currently connected users (excluding the new user)
     let all_users = db.get_all_users();
-    let other_users: Vec<User> = all_users.into_iter()
+    let other_users: Vec<User> = all_users
+        .into_iter()
         .filter(|u| u.uuid != user.uuid)
         .collect();
-    
+
     let user_list_msg = format_user_list(&other_users);
     if let Err(e) = writer.write_all(user_list_msg.as_bytes()).await {
-        info!("Client {} disconnected (write error sending user list: {})", client_uuid, e);
+        info!(
+            "Client {} disconnected (write error sending user list: {})",
+            client_uuid, e
+        );
         return Ok(());
     }
     if let Err(e) = writer.write_all(b"\n").await {
-        info!("Client {} disconnected (write error sending newline: {})", client_uuid, e);
+        info!(
+            "Client {} disconnected (write error sending newline: {})",
+            client_uuid, e
+        );
         return Ok(());
     }
     if let Err(e) = writer.flush().await {
         info!("Client {} disconnected (flush error: {})", client_uuid, e);
         return Ok(());
     }
-    
+
     loop {
         tokio::select! {
             // Listen for activities to broadcast
@@ -86,12 +93,12 @@ pub async fn handle_client(
                                 .duration_since(UNIX_EPOCH)
                                 .unwrap()
                                 .as_secs();
-                            
+
                             info!("Client {} ({}) sent message: '{}'", client_uuid, user.screen_name, content);
-                            
+
                             // Send the message through the database (which will broadcast it)
                             db.send_message(user.clone(), content, timestamp);
-                            
+
                             info!("Message broadcasted for client {}", client_uuid);
                         }
                         line.clear(); // Clear the buffer for the next message
